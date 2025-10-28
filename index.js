@@ -290,7 +290,11 @@ app.post("/save", (req, res) => {
   }
   
   const id = nanoid();
-  const timestamp = new Date().toLocaleString();
+  const timestamp = new Date().toLocaleString('en-IN', { 
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'medium'
+  });
   
   diaryEntries[id] = {
     encryptedText,

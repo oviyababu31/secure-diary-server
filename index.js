@@ -4,13 +4,13 @@ import bodyParser from "body-parser";
 import { nanoid } from "nanoid";
 
 const app = express();
-const PORT = process.env.PORT || 5000; // Important: Use PORT from environment
+const PORT = process.env.PORT || 5000;
 
-const CORRECT_KEY = 3;
+const CAESAR_SHIFT = 3; // Caesar cipher shift value
 
 // CORS Configuration for production
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*', // Allow your client URL
+  origin: process.env.CLIENT_URL || '*',
   credentials: true
 }));
 
@@ -41,7 +41,9 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   const entries = Object.entries(diaryEntries).map(([id, data]) => ({
     id,
-    ...data
+    encryptedText: data.encryptedText,
+    timestamp: data.timestamp,
+    hasKey: !!data.key // Just show if key exists, not the actual key
   }));
 
   res.send(`
@@ -154,6 +156,15 @@ app.get("/", (req, res) => {
           word-break: break-all;
           line-height: 1.6;
         }
+        .key-status {
+          display: inline-block;
+          background: #28a745;
+          color: white;
+          padding: 0.3rem 0.8rem;
+          border-radius: 5px;
+          font-size: 0.8rem;
+          margin-top: 0.5rem;
+        }
         .no-entries {
           text-align: center;
           padding: 3rem;
@@ -179,17 +190,21 @@ app.get("/", (req, res) => {
           transform: translateY(-2px);
           box-shadow: 0 7px 20px rgba(102, 126, 234, 0.6);
         }
-        .key-info {
-          background: #fff3cd;
-          border: 2px solid #ffc107;
+        .security-notice {
+          background: #d4edda;
+          border: 2px solid #28a745;
           border-radius: 10px;
           padding: 1rem;
           margin-bottom: 2rem;
           text-align: center;
         }
-        .key-info strong {
-          color: #856404;
+        .security-notice strong {
+          color: #155724;
           font-size: 1.1rem;
+        }
+        .security-notice p {
+          color: #155724;
+          margin-top: 0.5rem;
         }
       </style>
     </head>
@@ -200,9 +215,9 @@ app.get("/", (req, res) => {
           <p>Secure E-Diary Server - Encrypted Message Storage</p>
         </div>
 
-        <div class="key-info">
-          <strong>🔑 Decryption Key: ${CORRECT_KEY}</strong>
-          <p>Only requests with this key will be decrypted</p>
+        <div class="security-notice">
+          <strong>🔒 Enhanced Security Active</strong>
+          <p>4-digit keys are never displayed on this dashboard. Each entry has its own unique key.</p>
         </div>
 
         <div class="stats">
@@ -211,7 +226,7 @@ app.get("/", (req, res) => {
             <p>📝 Total Entries</p>
           </div>
           <div class="stat-card">
-            <h3>${CORRECT_KEY}</h3>
+            <h3>${CAESAR_SHIFT}</h3>
             <p>🔐 Caesar Shift</p>
           </div>
           <div class="stat-card">
@@ -231,7 +246,10 @@ app.get("/", (req, res) => {
           ` : entries.map(entry => `
             <div class="entry-card">
               <div class="entry-header">
-                <span class="entry-id">ID: ${entry.id}</span>
+                <div>
+                  <span class="entry-id">ID: ${entry.id}</span>
+                  ${entry.hasKey ? '<span class="key-status">🔑 Key Protected</span>' : ''}
+                </div>
                 <span class="entry-time">⏰ ${entry.timestamp}</span>
               </div>
               <div class="encrypted-text">
@@ -256,10 +274,19 @@ app.get("/", (req, res) => {
 
 // API Endpoints
 app.post("/save", (req, res) => {
-  const { encryptedText } = req.body;
+  const { encryptedText, key } = req.body;
   
   if (!encryptedText) {
     return res.status(400).json({ error: "No content provided" });
+  }
+  
+  if (!key || typeof key !== 'number') {
+    return res.status(400).json({ error: "Valid 4-digit key required" });
+  }
+
+  // Validate 4-digit key (1000-9999)
+  if (key < 1000 || key > 9999) {
+    return res.status(400).json({ error: "Key must be a 4-digit number" });
   }
   
   const id = nanoid();
@@ -267,10 +294,11 @@ app.post("/save", (req, res) => {
   
   diaryEntries[id] = {
     encryptedText,
+    key: key, // Store the 4-digit key
     timestamp
   };
   
-  console.log(`✅ NEW ENTRY: ${id} at ${timestamp}`);
+  console.log(`✅ NEW ENTRY: ${id} at ${timestamp} (Key: ****)`); // Don't log actual key
   
   res.json({ success: true, id });
 });
@@ -293,17 +321,19 @@ app.post("/decrypt", (req, res) => {
     return res.status(404).json({ error: "Entry not found" });
   }
   
-  if (Number(key) !== CORRECT_KEY) {
-    console.log(`❌ WRONG KEY for ${id}`);
+  // Validate the 4-digit key matches
+  if (Number(key) !== entry.key) {
+    console.log(`❌ WRONG KEY for ${id} (Attempted: ****, Expected: ****)`);
     return res.status(403).json({ error: "Incorrect decryption key" });
   }
   
-  const decrypted = caesarDecrypt(entry.encryptedText, CORRECT_KEY);
-  console.log(`✅ DECRYPTED: ${id}`);
+  const decrypted = caesarDecrypt(entry.encryptedText, CAESAR_SHIFT);
+  console.log(`✅ DECRYPTED: ${id} with correct key`);
   
   res.json({ success: true, decrypted });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔒 Security: 4-digit key system active`);
 });

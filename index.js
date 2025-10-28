@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 5000;
 
 const CAESAR_SHIFT = 3; // Caesar cipher shift value
 
-// CORS Configuration for production
+// CORS Configuration
 app.use(cors({
   origin: process.env.CLIENT_URL || '*',
   credentials: true
@@ -18,6 +18,27 @@ app.use(bodyParser.json());
 
 let diaryEntries = {};
 
+// Generate random 4-digit key
+function generateKey() {
+  return Math.floor(1000 + Math.random() * 9000);
+}
+
+// Caesar cipher encryption
+function caesarEncrypt(text, shift) {
+  return text
+    .split("")
+    .map((char) => {
+      if (/[a-z]/.test(char)) {
+        return String.fromCharCode(((char.charCodeAt(0) - 97 + shift) % 26) + 97);
+      } else if (/[A-Z]/.test(char)) {
+        return String.fromCharCode(((char.charCodeAt(0) - 65 + shift) % 26) + 65);
+      }
+      return char;
+    })
+    .join("");
+}
+
+// Caesar cipher decryption
 function caesarDecrypt(text, shift) {
   return text
     .split("")
@@ -43,7 +64,7 @@ app.get("/", (req, res) => {
     id,
     encryptedText: data.encryptedText,
     timestamp: data.timestamp,
-    hasKey: !!data.key // Just show if key exists, not the actual key
+    hasKey: !!data.key
   }));
 
   res.send(`
@@ -212,12 +233,12 @@ app.get("/", (req, res) => {
       <div class="container">
         <div class="header">
           <h1>🔐 Server Dashboard</h1>
-          <p>Secure E-Diary Server - Encrypted Message Storage</p>
+          <p>Secure E-Diary Server - Server-Side Encryption</p>
         </div>
 
         <div class="security-notice">
-          <strong>🔒 Enhanced Security Active</strong>
-          <p>4-digit keys are never displayed on this dashboard. Each entry has its own unique key.</p>
+          <strong>🔒 Server-Side Encryption Active</strong>
+          <p>Server encrypts plain text from clients. 4-digit keys are never displayed.</p>
         </div>
 
         <div class="stats">
@@ -236,12 +257,12 @@ app.get("/", (req, res) => {
         </div>
 
         <div class="entries-section">
-          <h2>📬 Received Encrypted Messages</h2>
+          <h2>📬 Encrypted Diary Entries</h2>
           
           ${entries.length === 0 ? `
             <div class="no-entries">
-              📭 No encrypted messages received yet.<br>
-              Waiting for clients to send diary entries...
+              📭 No diary entries yet.<br>
+              Waiting for clients to send entries for encryption...
             </div>
           ` : entries.map(entry => `
             <div class="entry-card">
@@ -272,21 +293,12 @@ app.get("/", (req, res) => {
   `);
 });
 
-// API Endpoints
+// API Endpoint: Save diary (server encrypts it)
 app.post("/save", (req, res) => {
-  const { encryptedText, key } = req.body;
+  const { plainText } = req.body;
   
-  if (!encryptedText) {
+  if (!plainText) {
     return res.status(400).json({ error: "No content provided" });
-  }
-  
-  if (!key || typeof key !== 'number') {
-    return res.status(400).json({ error: "Valid 4-digit key required" });
-  }
-
-  // Validate 4-digit key (1000-9999)
-  if (key < 1000 || key > 9999) {
-    return res.status(400).json({ error: "Key must be a 4-digit number" });
   }
   
   const id = nanoid();
@@ -296,22 +308,31 @@ app.post("/save", (req, res) => {
     timeStyle: 'medium'
   });
   
+  // SERVER ENCRYPTS THE PLAIN TEXT
+  const encryptedText = caesarEncrypt(plainText, CAESAR_SHIFT);
+  
+  // GENERATE RANDOM 4-DIGIT KEY
+  const key = generateKey();
+  
   diaryEntries[id] = {
     encryptedText,
-    key: key, // Store the 4-digit key
+    key: key,
     timestamp
   };
   
-  console.log(`✅ NEW ENTRY: ${id} at ${timestamp} (Key: ****)`); // Don't log actual key
+  console.log(`✅ NEW ENTRY ENCRYPTED: ${id} at ${timestamp} (Key: ****)`);
   
-  res.json({ success: true, id });
+  // Return the key to client (client must save this!)
+  res.json({ success: true, id, key });
 });
 
+// API Endpoint: Get entry list
 app.get("/entries", (req, res) => {
   const ids = Object.keys(diaryEntries);
   res.json({ ids });
 });
 
+// API Endpoint: Decrypt entry (server decrypts and sends)
 app.post("/decrypt", (req, res) => {
   const { id, key } = req.body;
   
@@ -331,13 +352,15 @@ app.post("/decrypt", (req, res) => {
     return res.status(403).json({ error: "Incorrect decryption key" });
   }
   
+  // SERVER DECRYPTS THE TEXT
   const decrypted = caesarDecrypt(entry.encryptedText, CAESAR_SHIFT);
   console.log(`✅ DECRYPTED: ${id} with correct key`);
   
+  // Send decrypted plain text back to client
   res.json({ success: true, decrypted });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔒 Security: 4-digit key system active`);
+  console.log(`🔒 Security: Server-side encryption with 4-digit keys`);
 });
